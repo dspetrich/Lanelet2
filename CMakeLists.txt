@@ -6,129 +6,131 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 cmake_policy(SET CMP0167 NEW)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dependencies
-# ─────────────────────────────────────────────────────────────────────────────
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Boost REQUIRED CONFIG COMPONENTS filesystem serialization)
-
-# pugixml — prefer Homebrew install
 find_package(pugixml REQUIRED)
-
-# GeographicLib — prefer Homebrew install
 find_package(GeographicLib REQUIRED)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# lanelet2_core
-# ─────────────────────────────────────────────────────────────────────────────
-file(GLOB LANELET2_CORE_SRC "lanelet2_core/src/*.cpp")
-add_library(lanelet2_core STATIC ${LANELET2_CORE_SRC})
-target_include_directories(lanelet2_core PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_core/include>
-    $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(lanelet2_core PUBLIC
-    Eigen3::Eigen
-    Boost::headers
-    Boost::filesystem
-    Boost::serialization
+set(LANELET2_COMMON_INCLUDE_DIRS
+  ${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_core/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_io/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_traffic_rules/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_projection/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_routing/include
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# lanelet2_io
-# ─────────────────────────────────────────────────────────────────────────────
-file(GLOB LANELET2_IO_SRC "lanelet2_io/src/*.cpp")
-add_library(lanelet2_io STATIC ${LANELET2_IO_SRC})
-target_include_directories(lanelet2_io PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_io/include>
-    $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(lanelet2_io PUBLIC
-    lanelet2_core
-    pugixml::pugixml
-    Boost::filesystem
-)
+function(add_lanelet2_library target)
+  cmake_parse_arguments(ARG "" "" "SOURCES;LINK_LIBS" ${ARGN})
+  add_library(${target} STATIC ${ARG_SOURCES})
+  target_include_directories(${target} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${target}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  )
+  target_link_libraries(${target} PUBLIC ${ARG_LINK_LIBS})
+  target_compile_definitions(${target} PUBLIC BOOST_ALLOW_DEPRECATED_HEADERS)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# lanelet2_projection
-# ─────────────────────────────────────────────────────────────────────────────
-file(GLOB LANELET2_PROJECTION_SRC "lanelet2_projection/src/*.cpp")
-add_library(lanelet2_projection STATIC ${LANELET2_PROJECTION_SRC})
-target_include_directories(lanelet2_projection PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_projection/include>
-    $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(lanelet2_projection PUBLIC
-    lanelet2_core
-    lanelet2_io
-    ${GeographicLib_LIBRARIES}
-)
-target_include_directories(lanelet2_projection PUBLIC ${GeographicLib_INCLUDE_DIRS})
-
-# ─────────────────────────────────────────────────────────────────────────────
-# lanelet2_traffic_rules
-# ─────────────────────────────────────────────────────────────────────────────
-file(GLOB LANELET2_TRAFFIC_SRC "lanelet2_traffic_rules/src/*.cpp")
-add_library(lanelet2_traffic_rules STATIC ${LANELET2_TRAFFIC_SRC})
-target_include_directories(lanelet2_traffic_rules PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_traffic_rules/include>
-    $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(lanelet2_traffic_rules PUBLIC
-    lanelet2_core
-)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# lanelet2_routing
-# ─────────────────────────────────────────────────────────────────────────────
-file(GLOB LANELET2_ROUTING_SRC "lanelet2_routing/src/*.cpp")
-add_library(lanelet2_routing STATIC ${LANELET2_ROUTING_SRC})
-target_include_directories(lanelet2_routing PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lanelet2_routing/include>
-    $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(lanelet2_routing PUBLIC
-    lanelet2_core
-    lanelet2_traffic_rules
-    Boost::headers
-)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Install
-# ─────────────────────────────────────────────────────────────────────────────
-include(GNUInstallDirs)
-install(TARGETS
-    lanelet2_core lanelet2_io lanelet2_projection
-    lanelet2_traffic_rules lanelet2_routing
-    EXPORT lanelet2Targets
+  install(TARGETS ${target}
+    EXPORT ${target}Targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
-foreach(pkg lanelet2_core lanelet2_io lanelet2_projection lanelet2_traffic_rules lanelet2_routing)
-    install(DIRECTORY ${pkg}/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    )
-endforeach()
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+  install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${target}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+  install(EXPORT ${target}Targets
+    FILE ${target}Targets.cmake
+    NAMESPACE ""
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${target}
+  )
+endfunction()
 
-# Export CMake targets so find_package(lanelet2_core) works
-install(EXPORT lanelet2Targets
-    FILE lanelet2Targets.cmake
-    NAMESPACE lanelet2::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/lanelet2
+add_lanelet2_library(lanelet2_core
+  SOURCES
+    lanelet2_core/src/Attribute.cpp
+    lanelet2_core/src/BasicRegulatoryElements.cpp
+    lanelet2_core/src/Lanelet.cpp
+    lanelet2_core/src/LaneletMap.cpp
+    lanelet2_core/src/LaneletSequence.cpp
+    lanelet2_core/src/LineStringGeometry.cpp
+    lanelet2_core/src/PolygonTriangulationGeometry.cpp
+    lanelet2_core/src/RegulatoryElement.cpp
+    lanelet2_core/src/RegulatoryElementGeometry.cpp
+  LINK_LIBS Eigen3::Eigen Boost::headers
 )
 
-# Generate per-package Config files
-foreach(pkg lanelet2_core lanelet2_io lanelet2_projection lanelet2_traffic_rules lanelet2_routing)
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${pkg}Config.cmake"
-"include(CMakeFindDependencyMacro)
-find_dependency(Eigen3)
-find_dependency(Boost COMPONENTS filesystem serialization)
-include(\"\${CMAKE_CURRENT_LIST_DIR}/../lanelet2/lanelet2Targets.cmake\" OPTIONAL)
-# Direct target alias for find_package(${pkg})
-if(NOT TARGET ${pkg})
-    add_library(${pkg} ALIAS lanelet2::${pkg})
-endif()
-")
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${pkg}Config.cmake"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${pkg}"
-    )
-endforeach()
+add_lanelet2_library(lanelet2_io
+  SOURCES
+    lanelet2_io/src/BinHandler.cpp
+    lanelet2_io/src/Factory.cpp
+    lanelet2_io/src/Io.cpp
+    lanelet2_io/src/OsmFile.cpp
+    lanelet2_io/src/OsmHandlerLoad.cpp
+    lanelet2_io/src/OsmHandlerWrite.cpp
+  LINK_LIBS lanelet2_core pugixml::pugixml Boost::headers Boost::filesystem Boost::serialization
+)
+
+add_lanelet2_library(lanelet2_traffic_rules
+  SOURCES
+    lanelet2_traffic_rules/src/GenericTrafficRules.cpp
+    lanelet2_traffic_rules/src/GermanTrafficRules.cpp
+    lanelet2_traffic_rules/src/TrafficRulesFactory.cpp
+  LINK_LIBS lanelet2_core
+)
+
+add_lanelet2_library(lanelet2_projection
+  SOURCES
+    lanelet2_projection/src/Geocentric.cpp
+    lanelet2_projection/src/LocalCartesian.cpp
+    lanelet2_projection/src/UTM.cpp
+  LINK_LIBS lanelet2_io GeographicLib::GeographicLib
+)
+
+add_lanelet2_library(lanelet2_routing
+  SOURCES
+    lanelet2_routing/src/LaneletPath.cpp
+    lanelet2_routing/src/Route.cpp
+    lanelet2_routing/src/RouteBuilder.cpp
+    lanelet2_routing/src/RoutingCost.cpp
+    lanelet2_routing/src/RoutingGraph.cpp
+    lanelet2_routing/src/RoutingGraphBuilder.cpp
+  LINK_LIBS lanelet2_core lanelet2_traffic_rules Boost::headers
+)
+
+function(write_lanelet2_config target dependencies)
+  set(config_file ${CMAKE_CURRENT_BINARY_DIR}/${target}Config.cmake)
+  file(WRITE ${config_file} "include(CMakeFindDependencyMacro)\n")
+  foreach(dep IN LISTS ${dependencies})
+    if(target STREQUAL "lanelet2_io" AND dep STREQUAL "Boost")
+      file(APPEND ${config_file} "find_dependency(Boost COMPONENTS filesystem serialization)\n")
+    else()
+      file(APPEND ${config_file} "find_dependency(${dep})\n")
+    endif()
+  endforeach()
+  file(APPEND ${config_file} "include(\"\${CMAKE_CURRENT_LIST_DIR}/${target}Targets.cmake\")\n")
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/${target}ConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+  )
+  install(FILES
+    ${config_file}
+    ${CMAKE_CURRENT_BINARY_DIR}/${target}ConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${target}
+  )
+endfunction()
+
+set(core_deps Eigen3 Boost)
+write_lanelet2_config(lanelet2_core core_deps)
+set(io_deps lanelet2_core pugixml Boost)
+write_lanelet2_config(lanelet2_io io_deps)
+set(traffic_deps lanelet2_core)
+write_lanelet2_config(lanelet2_traffic_rules traffic_deps)
+set(projection_deps lanelet2_io GeographicLib)
+write_lanelet2_config(lanelet2_projection projection_deps)
+set(routing_deps lanelet2_core lanelet2_traffic_rules Boost)
+write_lanelet2_config(lanelet2_routing routing_deps)
